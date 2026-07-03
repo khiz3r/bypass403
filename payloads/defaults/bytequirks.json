@@ -1,0 +1,33 @@
+{
+  "_comment": "Bytes that specific frameworks mis-handle during path parsing/routing, letting a segment like 'admin' slip past an upstream ACL that normalized differently. position: 'prefix' = prepended to the target path; 'segment' = inserted as its own path segment.",
+
+  "frameworks": [
+    {
+      "name": "flask",
+      "desc": "Werkzeug/Flask routing quirks",
+      "bytes": ["0x85", "0xA0", "0x1F", "0x1E", "0x0C"],
+      "positions": ["prefix", "segment"]
+    },
+    {
+      "name": "spring",
+      "desc": "Spring Boot / Tomcat path matching quirks",
+      "bytes": ["0x09", "0x3B"],
+      "positions": ["prefix", "segment"],
+      "note": "0x3B is literal ';' matrix-param injection, distinct from URL-encoded semicolon module"
+    },
+    {
+      "name": "nodejs",
+      "desc": "Node.js / Express routing quirks",
+      "bytes": ["0xA0", "0x09", "0x0C"],
+      "positions": ["prefix", "segment"]
+    },
+    {
+      "name": "generic-control",
+      "desc": "generic ASCII control-character prefix sweep",
+      "bytes": ["0x00", "0x01", "0x02", "0x03", "0x04", "0x05", "0x06", "0x07", "0x08", "0x0B", "0x0E", "0x0F", "0x10", "0x1A"],
+      "positions": ["prefix"]
+    }
+  ],
+
+  "encode_forms": ["raw", "percent"]
+}

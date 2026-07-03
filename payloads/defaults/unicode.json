@@ -1,0 +1,21 @@
+{
+  "_comment": "Unicode chars that WAFs won't pattern-match but that the app server normalizes (NFKC-style) or truncates (upper-byte-strip) back to a sensitive ASCII char. 'normalize' entries rely on Unicode normalization happening after the WAF check; 'truncate' entries rely on naive charset conversion (char & 0xFF) stripping the high byte.",
+
+  "normalize_pairs": [
+    { "ascii": "a", "unicode": "\uFF41", "desc": "fullwidth latin small letter a" },
+    { "ascii": "d", "unicode": "\uFF44", "desc": "fullwidth latin small letter d" },
+    { "ascii": "m", "unicode": "\uFF4D", "desc": "fullwidth latin small letter m" },
+    { "ascii": "i", "unicode": "\uFF49", "desc": "fullwidth latin small letter i" },
+    { "ascii": "n", "unicode": "\uFF4E", "desc": "fullwidth latin small letter n" },
+    { "ascii": "/", "unicode": "\uFF0F", "desc": "fullwidth solidus" },
+    { "ascii": ".", "unicode": "\uFF0E", "desc": "fullwidth full stop" },
+    { "ascii": "-", "unicode": "\uFF0D", "desc": "fullwidth hyphen-minus" }
+  ],
+
+  "truncate_chars": [
+    { "target_ascii": "/", "byte": "\u022F", "desc": "U+022F, naive (codepoint & 0xFF) strip -> 0x2F '/'" },
+    { "target_ascii": ".", "byte": "\u022E", "desc": "U+022E, naive (codepoint & 0xFF) strip -> 0x2E '.'" }
+  ],
+
+  "apply_to_segments": ["admin", "internal", "console", "manage", "api"]
+}

