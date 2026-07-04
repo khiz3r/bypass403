@@ -29,9 +29,9 @@ type PathEntry struct {
 }
 
 type PathsDB struct {
-	EndPaths      []PathEntry `json:"end_paths"`
-	MidPaths      []PathEntry `json:"mid_paths"`
-	RawEncoding   []PathEntry `json:"raw_encoding_strategies"`
+	EndPaths    []PathEntry `json:"end_paths"`
+	MidPaths    []PathEntry `json:"mid_paths"`
+	RawEncoding []PathEntry `json:"raw_encoding_strategies"`
 }
 
 type OverrideHeader struct {
@@ -92,11 +92,11 @@ type ByteQuirksDB struct {
 
 // DB is the full loaded payload set.
 type DB struct {
-	Paths       PathsDB
-	Headers     HeadersDB
-	Unicode     UnicodeDB
-	ByteQuirks  ByteQuirksDB
-	LoadedFrom  map[string]string // filename -> "disk:<path>" or "embedded"
+	Paths      PathsDB
+	Headers    HeadersDB
+	Unicode    UnicodeDB
+	ByteQuirks ByteQuirksDB
+	LoadedFrom map[string]string // filename -> "disk:<path>" or "embedded"
 }
 
 // Load reads the four payload files. dir is an optional on-disk override

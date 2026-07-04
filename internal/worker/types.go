@@ -27,7 +27,31 @@ type Result struct {
 	BodyHash    string
 	ContentType string
 	RawHeaders  map[string]string
+	// BodySnippet holds the first 512 bytes of the response body, lowercased,
+	// used for WAF signature matching without retaining the full body in memory.
+	BodySnippet string
 	Error       error
+}
+
+// CodeRange represents an inclusive status-code range for the -fc filter,
+// e.g. "404" becomes {404, 404} and "400-410" becomes {400, 410}.
+type CodeRange struct {
+	Low  int
+	High int
+}
+
+// CodeRanges is a set of CodeRange used to filter out noisy status codes
+// via -fc (e.g. "404,400-410").
+type CodeRanges []CodeRange
+
+// Match reports whether code falls inside any of the configured ranges.
+func (rs CodeRanges) Match(code int) bool {
+	for _, r := range rs {
+		if code >= r.Low && code <= r.High {
+			return true
+		}
+	}
+	return false
 }
 
 // Config holds all runtime flags plus baseline/calibration state filled in
@@ -42,8 +66,9 @@ type Config struct {
 	Debug         bool
 	Wayback       bool
 	CustomHeaders []string
-	PayloadsDir   string // optional on-disk payload override dir (passed to payloads.Load)
-	OutputFile    string // optional file to write the report output to
+	PayloadsDir   string     // optional on-disk payload override dir (passed to payloads.Load)
+	OutputFile    string     // optional file to write the report output to
+	FilterCodes   CodeRanges // -fc: status codes/ranges to drop from the report entirely
 
 	// Baseline — filled by Run() before the sweep.
 	BaseStatus      int

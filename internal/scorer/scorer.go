@@ -44,7 +44,9 @@ func Score(r worker.Result, cfg *worker.Config) ScoredResult {
 	}
 
 	// --- WAF fingerprint check ---
-	combined := strings.ToLower(r.ContentType)
+	// Include BodySnippet so HTML-challenge WAFs (Cloudflare "Attention Required",
+	// Imperva challenge) are caught even when they don't set identifying headers.
+	combined := strings.ToLower(r.ContentType) + " " + r.BodySnippet
 	for k, v := range r.RawHeaders {
 		combined += " " + strings.ToLower(k) + " " + strings.ToLower(v)
 	}
@@ -54,8 +56,9 @@ func Score(r worker.Result, cfg *worker.Config) ScoredResult {
 			break
 		}
 	}
-	// Also tag if the detected WAF list is non-empty and status didn't change
-	if len(cfg.WAFFingerprints) > 0 && r.StatusCode == cfg.BaseStatus {
+	// Also tag if the detected WAF list is non-empty, baseline was 403, and
+	// status didn't change — avoids penalising real 200s when baseline is 200.
+	if len(cfg.WAFFingerprints) > 0 && cfg.BaseStatus == 403 && r.StatusCode == cfg.BaseStatus {
 		sr.IsWAF = true
 	}
 
@@ -148,14 +151,28 @@ func buildCurl(r worker.Result) string {
 	for k, v := range r.Req.Headers {
 		sb.WriteString(fmt.Sprintf(" -H '%s: %s'", k, v))
 	}
-	sb.WriteString(fmt.Sprintf(" '%s'", r.Req.URL))
+	// For raw requests, r.Req.URL holds only the base (e.g. "https://host");
+	// reconstruct the full wire target from RawTarget so the curl command
+	// actually replays the byte-exact path that triggered the bypass.
+	curlURL := r.Req.URL
+	if r.Req.UseRaw && r.Req.RawTarget != "" {
+		curlURL = r.Req.URL + r.Req.RawTarget
+	}
+	sb.WriteString(fmt.Sprintf(" '%s'", curlURL))
 	return sb.String()
 }
 
 // Print scores all results and outputs a ranked table.
 func Print(results []worker.Result, cfg *worker.Config) {
+	filtered := 0
 	var scored []ScoredResult
 	for _, r := range results {
+		// -fc: drop matching status codes before they're even scored, so
+		// they don't consume a HIGH/MEDIUM/LOW slot or clutter the report.
+		if r.Error == nil && cfg.FilterCodes.Match(r.StatusCode) {
+			filtered++
+			continue
+		}
 		scored = append(scored, Score(r, cfg))
 	}
 
@@ -193,8 +210,12 @@ func Print(results []worker.Result, cfg *worker.Config) {
 	}
 
 	// Summary
-	builder.WriteString(fmt.Sprintf("\n[*] Done. %d results | HIGH: %d | MEDIUM: %d | LOW: %d\n",
-		len(scored), len(high), len(medium), len(low)))
+	summary := fmt.Sprintf("\n[*] Done. %d results | HIGH: %d | MEDIUM: %d | LOW: %d",
+		len(scored), len(high), len(medium), len(low))
+	if filtered > 0 {
+		summary += fmt.Sprintf(" | filtered: %d (-fc)", filtered)
+	}
+	builder.WriteString(summary + "\n")
 
 	output := builder.String()
 	fmt.Print(output)
@@ -209,32 +230,42 @@ func printSection(w *strings.Builder, label string, items []ScoredResult, cfg *w
 	if len(items) == 0 {
 		return
 	}
-	w.WriteString(fmt.Sprintf("\n── %s (%d) ──\n", label, len(items)))
+	w.WriteString(fmt.Sprintf("\n── %s (%d) ──\n\n", label, len(items)))
 	for _, sr := range items {
 		r := sr.Result
 		wafTag := ""
 		if sr.IsWAF {
 			wafTag = " [WAF]"
 		}
-		valueText := ""
+
+		// Header line: only join the parts that actually have content, so we
+		// never end up with a dangling "| " when a field is empty.
+		headParts := []string{
+			fmt.Sprintf("[%s]%s %d", sr.Confidence, wafTag, r.StatusCode),
+			fmt.Sprintf("%d bytes", r.BodyLen),
+		}
+		if r.Req.Description != "" {
+			headParts = append(headParts, r.Req.Description)
+		}
+		w.WriteString("  " + strings.Join(headParts, " | ") + "\n")
+
 		if r.Req.Value != "" {
-			valueText = " | value: " + r.Req.Value
+			w.WriteString(fmt.Sprintf("    value  : %s\n", r.Req.Value))
 		} else if len(r.Req.Headers) > 0 {
 			parts := make([]string, 0, len(r.Req.Headers))
 			for k, v := range r.Req.Headers {
 				parts = append(parts, fmt.Sprintf("%s=%s", k, v))
 			}
-			valueText = " | values: " + strings.Join(parts, ", ")
+			w.WriteString(fmt.Sprintf("    header : %s\n", strings.Join(parts, ", ")))
 		}
-		w.WriteString(fmt.Sprintf("  [%s]%s %d | %d bytes | %s%s | %s\n",
-			sr.Confidence, wafTag,
-			r.StatusCode, r.BodyLen,
-			r.Req.Description,
-			valueText,
-			strings.Join(sr.Reasons, "; "),
-		))
+
+		if len(sr.Reasons) > 0 {
+			w.WriteString(fmt.Sprintf("    signal : %s\n", strings.Join(sr.Reasons, "; ")))
+		}
+
 		if sr.CurlCmd != "" && !cfg.Silent {
-			w.WriteString(fmt.Sprintf("    → %s\n", sr.CurlCmd))
+			w.WriteString(fmt.Sprintf("    curl   : %s\n", sr.CurlCmd))
 		}
+		w.WriteString("\n")
 	}
 }

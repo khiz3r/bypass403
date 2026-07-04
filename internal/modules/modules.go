@@ -2,18 +2,18 @@
 // the loaded payload database. Every function returns []worker.Request and is
 // wired into Build(). Module responsibilities:
 //
-//   pathMutations      – end-path, mid-path, and raw-encoding strategies from paths.json
-//   headerInjections   – IP headers × values, override headers, port headers (headers.json)
-//   staticHeaders      – single-shot header injections (CVE-2025-29927, blank Host, Accept…)
-//   methodFuzzing      – HTTP method sweep + override headers
-//   hopByHop           – Connection: header stripping trick
-//   protocolTricks     – scheme swap, Referer spoofing
-//   userAgentFuzzing   – crawler/tool UA sweep (headers.json user_agents)
-//   debugParams        – query-string debug param injection (headers.json debug_params)
-//   apiVersionFuzzing  – /vN/ segment replacement
-//   unicodeMutations   – Unicode normalization + truncation bypass (unicode.json)
-//   byteQuirkMutations – framework-specific byte injection (bytequirks.json)
-//   waybackPaths       – Wayback Machine CDX live lookup
+//	pathMutations      – end-path, mid-path, and raw-encoding strategies from paths.json
+//	headerInjections   – IP headers × values, override headers, port headers (headers.json)
+//	staticHeaders      – single-shot header injections (CVE-2025-29927, blank Host, Accept…)
+//	methodFuzzing      – HTTP method sweep + override headers
+//	hopByHop           – Connection: header stripping trick
+//	protocolTricks     – scheme swap, Referer spoofing
+//	userAgentFuzzing   – crawler/tool UA sweep (headers.json user_agents)
+//	debugParams        – query-string debug param injection (headers.json debug_params)
+//	apiVersionFuzzing  – /vN/ segment replacement
+//	unicodeMutations   – Unicode normalization + truncation bypass (unicode.json)
+//	byteQuirkMutations – framework-specific byte injection (bytequirks.json)
+//	waybackPaths       – Wayback Machine CDX live lookup
 package modules
 
 import (
@@ -27,13 +27,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	payloads "bypass403/payloads"
 	"bypass403/internal/worker"
+	payloads "bypass403/payloads"
 )
 
 // Build generates all bypass request candidates for rawURL.
 // db must be a fully loaded *payloads.DB (never nil).
-func Build(rawURL string, wayback bool, db *payloads.DB) []worker.Request {
+func Build(rawURL string, wayback bool, silent bool, db *payloads.DB) []worker.Request {
 	var reqs []worker.Request
 	reqs = append(reqs, pathMutations(rawURL, db)...)
 	reqs = append(reqs, headerInjections(rawURL, db)...)
@@ -48,7 +48,7 @@ func Build(rawURL string, wayback bool, db *payloads.DB) []worker.Request {
 	reqs = append(reqs, unicodeMutations(rawURL, db)...)
 	reqs = append(reqs, byteQuirkMutations(rawURL, db)...)
 	if wayback {
-		reqs = append(reqs, waybackPaths(rawURL)...)
+		reqs = append(reqs, waybackPaths(rawURL, silent)...)
 	}
 	return reqs
 }
@@ -206,34 +206,37 @@ func pathMutations(rawURL string, db *payloads.DB) []worker.Request {
 			depth = 1
 		}
 		var variants []entry
-		switch rs.ID {
-		case "enc-last-char":
+		// Use HasPrefix so the depth-suffixed IDs (enc-last-char-d2, etc.) route
+		// to the same logic branch as their depth-1 counterparts. Depth is driven
+		// entirely by rs.Depth, not by the ID suffix.
+		switch {
+		case strings.HasPrefix(rs.ID, "enc-last-char"):
 			if len(lastSeg) > 0 {
 				encoded := lastSeg[:len(lastSeg)-1] + percentEncodeChar(lastSeg[len(lastSeg)-1], depth)
-				variants = append(variants, entry{prefixPath + "/" + encoded, rs.Value, "RawEnc[enc-last-char d=" + strconv.Itoa(depth) + "]: " + rs.Desc, true})
+				variants = append(variants, entry{prefixPath + "/" + encoded, rs.Value, "RawEnc[" + rs.ID + "]: " + rs.Desc, true})
 			}
-		case "enc-first-char":
+		case strings.HasPrefix(rs.ID, "enc-first-char"):
 			if len(lastSeg) > 0 {
 				encoded := percentEncodeChar(lastSeg[0], depth) + lastSeg[1:]
-				variants = append(variants, entry{prefixPath + "/" + encoded, rs.Value, "RawEnc[enc-first-char d=" + strconv.Itoa(depth) + "]: " + rs.Desc, true})
+				variants = append(variants, entry{prefixPath + "/" + encoded, rs.Value, "RawEnc[" + rs.ID + "]: " + rs.Desc, true})
 			}
-		case "enc-last-segment":
+		case strings.HasPrefix(rs.ID, "enc-last-segment"):
 			encoded := percentEncodeAll(lastSeg, depth)
-			variants = append(variants, entry{prefixPath + "/" + encoded, rs.Value, "RawEnc[enc-last-segment d=" + strconv.Itoa(depth) + "]: " + rs.Desc, true})
-		case "enc-full-path":
+			variants = append(variants, entry{prefixPath + "/" + encoded, rs.Value, "RawEnc[" + rs.ID + "]: " + rs.Desc, true})
+		case strings.HasPrefix(rs.ID, "enc-full-path"):
 			encoded := percentEncodeAll(strings.TrimPrefix(path, "/"), depth)
-			variants = append(variants, entry{"/" + encoded, rs.Value, "RawEnc[enc-full-path d=" + strconv.Itoa(depth) + "]: " + rs.Desc, true})
-		case "enc-full-segment":
+			variants = append(variants, entry{"/" + encoded, rs.Value, "RawEnc[" + rs.ID + "]: " + rs.Desc, true})
+		case strings.HasPrefix(rs.ID, "enc-full-segment"):
+			// Guard root path: segments == [""] produces a lone "/" — skip it.
+			if len(segments) == 1 && segments[0] == "" {
+				break
+			}
 			var encSegs []string
 			for _, seg := range segments {
 				encSegs = append(encSegs, percentEncodeAll(seg, depth))
 			}
 			encoded := "/" + strings.Join(encSegs, "/")
-			variants = append(variants, entry{encoded, rs.Value, "RawEnc[enc-full-segment d=" + strconv.Itoa(depth) + "]: " + rs.Desc, true})
-		case "enc-depth-2", "enc-depth-3":
-			// These modify depth for the enc-full-path strategy explicitly.
-			encoded := percentEncodeAll(strings.TrimPrefix(path, "/"), depth)
-			variants = append(variants, entry{"/" + encoded, rs.Value, "RawEnc[" + rs.ID + "]: " + rs.Desc, true})
+			variants = append(variants, entry{encoded, rs.Value, "RawEnc[" + rs.ID + "]: " + rs.Desc, true})
 		}
 		entries = append(entries, variants...)
 	}
@@ -376,6 +379,15 @@ func methodFuzzing(rawURL string) []worker.Request {
 		reqs = append(reqs, stdReq(m, rawURL, "Method: "+m, "method", nil))
 	}
 
+	// Content-Length: 0 trick: some middleware only checks method+body presence.
+	// Sending POST/PUT/PATCH with an explicit zero body can slip past ACLs that
+	// only block non-empty request bodies for those methods.
+	for _, m := range []string{"POST", "PUT", "PATCH"} {
+		reqs = append(reqs, stdReq(m, rawURL,
+			"Method+CL0: "+m+" Content-Length: 0", "method",
+			map[string]string{"Content-Length": "0"}))
+	}
+
 	for _, m := range overrideMethods {
 		for _, hName := range overrideHeaderNames {
 			reqs = append(reqs, stdReq("GET", rawURL,
@@ -394,7 +406,11 @@ func hopByHop(rawURL string) []worker.Request {
 		{"X-Forwarded-For"},
 		{"X-Real-IP", "X-Forwarded-For"},
 		{"Authorization"},
+		{"Proxy-Authorization"},
+		{"Keep-Alive"},
 		{"X-Forwarded-For", "X-Real-IP", "Authorization"},
+		{"X-Forwarded-For", "Proxy-Authorization"},
+		{"Authorization", "Proxy-Authorization", "Keep-Alive"},
 	}
 	var reqs []worker.Request
 	for _, combo := range combos {
@@ -474,23 +490,35 @@ func apiVersionFuzzing(rawURL string) []worker.Request {
 	seen := map[string]bool{path: true}
 	var reqs []worker.Request
 
+	// isVersionSeg returns true only for bare version segments like "v1", "v2", "v10".
+	// Avoids false matches on segments like "invoke", "overview", "verbose".
+	isVersionSeg := func(seg string) bool {
+		if len(seg) < 2 || seg[0] != 'v' {
+			return false
+		}
+		for _, c := range seg[1:] {
+			if c < '0' || c > '9' {
+				return false
+			}
+		}
+		return true
+	}
+
 	for _, ver := range versions {
 		var newPath string
-		if strings.Contains(path, "/v") {
-			parts := strings.Split(path, "/")
-			replaced := false
-			for i, seg := range parts {
-				if len(seg) >= 2 && seg[0] == 'v' && seg[1] >= '0' && seg[1] <= '9' {
-					parts[i] = ver
-					replaced = true
-					break
-				}
+		parts := strings.Split(path, "/")
+		replaced := false
+		for i, seg := range parts {
+			if isVersionSeg(seg) {
+				parts[i] = ver
+				replaced = true
+				break
 			}
-			if !replaced {
-				continue
-			}
+		}
+		if replaced {
 			newPath = strings.Join(parts, "/")
 		} else {
+			// No version segment found — prepend version prefix.
 			newPath = "/" + ver + "/" + strings.TrimPrefix(path, "/")
 		}
 		if seen[newPath] {
@@ -690,7 +718,7 @@ func byteQuirkMutations(rawURL string, db *payloads.DB) []worker.Request {
 
 // ── waybackPaths ─────────────────────────────────────────────────────────────
 
-func waybackPaths(rawURL string) []worker.Request {
+func waybackPaths(rawURL string, silent bool) []worker.Request {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return nil
@@ -702,11 +730,15 @@ func waybackPaths(rawURL string) []worker.Request {
 		host,
 	)
 
-	fmt.Println("[*] Querying Wayback Machine CDX...")
+	if !silent {
+		fmt.Println("[*] Querying Wayback Machine CDX...")
+	}
 	client := &http.Client{Timeout: 20 * time.Second}
 	resp, err := client.Get(cdxURL)
 	if err != nil {
-		fmt.Printf("[!] Wayback error: %v\n", err)
+		if !silent {
+			fmt.Printf("[!] Wayback error: %v\n", err)
+		}
 		return nil
 	}
 	defer resp.Body.Close()
@@ -714,7 +746,9 @@ func waybackPaths(rawURL string) []worker.Request {
 	body, _ := io.ReadAll(resp.Body)
 	var rows [][]string
 	if err := json.Unmarshal(body, &rows); err != nil {
-		fmt.Printf("[!] Wayback parse error: %v\n", err)
+		if !silent {
+			fmt.Printf("[!] Wayback parse error: %v\n", err)
+		}
 		return nil
 	}
 
@@ -737,6 +771,8 @@ func waybackPaths(rawURL string) []worker.Request {
 			u.Scheme+"://"+u.Host+p,
 			"Wayback: "+p, "wayback", nil))
 	}
-	fmt.Printf("[*] Wayback: %d unique paths queued\n\n", len(reqs))
+	if !silent {
+		fmt.Printf("[*] Wayback: %d unique paths queued\n\n", len(reqs))
+	}
 	return reqs
 }

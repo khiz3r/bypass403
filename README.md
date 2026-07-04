@@ -10,6 +10,8 @@ A Go-based 403 bypass scanner that generates request variants across path, heade
 - Unicode and byte-quirk bypass mutations
 - Optional Wayback Machine path discovery
 - Output to terminal and optional text file
+- Status-code filtering (`-fc`) to hide noisy responses from the report
+- Baseline check gates the whole scan: if the target isn't returning 403 to begin with, no bypass payloads are sent
 - Default payload DB lookup in ~/.config/bypass403
 
 ## Installation
@@ -54,6 +56,7 @@ sudo cp bypass403 /usr/local/bin/ # Optional
 - `-debug` : Show verbose request/response details.
 - `-wayback` : Enable Wayback Machine path discovery.
 - `-o` : Write the report output to a text file.
+- `-fc` : Filter out response status codes from the report. Comma-separated, ranges supported (e.g. `-fc 404,400-410`).
 - `-H` : Add a custom header. Repeat the flag to set multiple headers.
 
 ### Examples
@@ -70,6 +73,10 @@ sudo cp bypass403 /usr/local/bin/ # Optional
 ./bypass403 -u https://example.com/admin \
   -H "X-Test: 1" \
   -H "Cookie: a=b"
+```
+
+```bash
+./bypass403 -u https://example.com/admin -fc 404,400-410
 ```
 
 ## Defaults
@@ -92,3 +99,5 @@ The tool loads payload JSON files from the following locations, in order:
 - If you provide `-proxy` without a value, the default proxy target is used.
 - You can override it with any custom proxy URL.
 - Use `-o <file>` to save the report output to a text file.
+- Before running any bypass payloads, the tool sends a single baseline request to the target. If that baseline doesn't come back `403`, the scan stops there with a warning — there's nothing to bypass on an endpoint that isn't already blocking you. This check runs even with `-silent`.
+- `-fc` drops matching status codes from the report entirely (they aren't scored or counted toward HIGH/MEDIUM/LOW); the summary line shows how many were filtered.

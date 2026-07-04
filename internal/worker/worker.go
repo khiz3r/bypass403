@@ -7,10 +7,50 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+// ParseCodeFilter parses a -fc flag value like "404,400-410,500" into a
+// CodeRanges set. Whitespace around entries/dashes is tolerated. An empty
+// string returns a nil (empty) CodeRanges, which matches nothing.
+func ParseCodeFilter(s string) (CodeRanges, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+
+	var ranges CodeRanges
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		if strings.Contains(part, "-") {
+			bounds := strings.SplitN(part, "-", 2)
+			low, err1 := strconv.Atoi(strings.TrimSpace(bounds[0]))
+			high, err2 := strconv.Atoi(strings.TrimSpace(bounds[1]))
+			if err1 != nil || err2 != nil {
+				return nil, fmt.Errorf("invalid -fc range %q: expected NNN-NNN", part)
+			}
+			if low > high {
+				low, high = high, low
+			}
+			ranges = append(ranges, CodeRange{Low: low, High: high})
+			continue
+		}
+
+		code, err := strconv.Atoi(part)
+		if err != nil {
+			return nil, fmt.Errorf("invalid -fc value %q: expected a status code or NNN-NNN range", part)
+		}
+		ranges = append(ranges, CodeRange{Low: code, High: code})
+	}
+	return ranges, nil
+}
 
 // wafSignatures maps a WAF label to header/content substrings that identify it.
 var wafSignatures = map[string][]string{
@@ -25,7 +65,10 @@ var wafSignatures = map[string][]string{
 // Body content is not stored to avoid memory cost; header signals cover the
 // common WAF vendors sufficiently.
 func detectWAF(r Result) []string {
-	combined := strings.ToLower(r.ContentType)
+	// Include headers, content-type, and the first 512 bytes of the body so
+	// WAFs that signal in HTML (Cloudflare "Attention Required", Imperva
+	// challenge page) are caught, not just header-only vendors.
+	combined := strings.ToLower(r.ContentType) + " " + r.BodySnippet
 	for k, v := range r.RawHeaders {
 		combined += " " + strings.ToLower(k) + " " + strings.ToLower(v)
 	}
@@ -41,7 +84,10 @@ func detectWAF(r Result) []string {
 	return found
 }
 
-func buildClient(cfg *Config) *http.Client {
+// NewClient builds the shared http.Client used for the baseline check,
+// calibration request, and the full sweep. Exported so main.go can build it
+// once and reuse it across SendBaseline and RunSweep.
+func NewClient(cfg *Config) *http.Client {
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: cfg.SkipTLS}, //nolint:gosec
 	}
@@ -137,6 +183,11 @@ func doRequestOnce(client *http.Client, cfg *Config, req Request) Result {
 		fmt.Printf("<< HTTP %d | len=%d | hash=%s\n", resp.StatusCode, len(body), hash[:8])
 	}
 
+	snippet := strings.ToLower(string(body))
+	if len(snippet) > 512 {
+		snippet = snippet[:512]
+	}
+
 	return Result{
 		Req:         req,
 		StatusCode:  resp.StatusCode,
@@ -144,17 +195,19 @@ func doRequestOnce(client *http.Client, cfg *Config, req Request) Result {
 		BodyHash:    hash,
 		ContentType: resp.Header.Get("Content-Type"),
 		RawHeaders:  rawHeaders,
+		BodySnippet: snippet,
 	}
 }
 
-// Run executes the full bypass sweep:
-//  1. Baseline request to establish the reference status/body.
-//  2. Calibration request against a known-nonexistent path to measure 404 body size.
-//  3. Worker pool dispatches all requests concurrently, respecting -t and -d flags.
-func Run(cfg *Config, requests []Request) []Result {
-	client := buildClient(cfg)
-
-	// --- Baseline ---
+// SendBaseline fires the single reference request against cfg.URL and
+// populates cfg.BaseStatus/BaseLen/BaseHash/BaseContentType/WAFFingerprints.
+//
+// This is split out from the rest of the sweep so callers (main.go) can
+// inspect cfg.BaseStatus BEFORE deciding whether to build/run any bypass
+// payloads at all. Running dozens of bypass techniques against an endpoint
+// that isn't actually returning 403 in the first place is meaningless,
+// so main.go uses this to bail out early.
+func SendBaseline(client *http.Client, cfg *Config) Result {
 	if !cfg.Silent {
 		fmt.Println("[*] Sending baseline request...")
 	}
@@ -170,20 +223,30 @@ func Run(cfg *Config, requests []Request) []Result {
 	cfg.BaseHash = baseline.BodyHash
 	cfg.BaseContentType = baseline.ContentType
 	cfg.WAFFingerprints = detectWAF(baseline)
+	return baseline
+}
 
-	if !cfg.Silent {
-		fmt.Printf("[*] Baseline: %d | %d bytes | hash=%s\n",
-			cfg.BaseStatus, cfg.BaseLen, cfg.BaseHash[:8])
-		if len(cfg.WAFFingerprints) > 0 {
-			fmt.Printf("[*] WAF detected: %s\n", strings.Join(cfg.WAFFingerprints, ", "))
-		}
-		fmt.Println()
+// RunSweep executes the calibration request plus the full bypass worker
+// pool. Callers must have already called SendBaseline and confirmed
+// cfg.BaseStatus == 403 before calling this — RunSweep does not re-check
+// that itself, it assumes the caller already gated it.
+func RunSweep(client *http.Client, cfg *Config, requests []Request) []Result {
+	if !cfg.Silent && len(cfg.WAFFingerprints) > 0 {
+		fmt.Printf("[*] WAF detected: %s\n", strings.Join(cfg.WAFFingerprints, ", "))
 	}
 
 	// --- Calibration (non-existent path) ---
+	// Build the calibration URL by replacing the path only, so any query string
+	// in cfg.URL doesn't get mangled by naive string concatenation.
+	calibURL := cfg.URL
+	if cu, err := url.Parse(cfg.URL); err == nil {
+		cu.Path = "/bypass403_calib_f0f0f0f0f0"
+		cu.RawQuery = ""
+		calibURL = cu.String()
+	}
 	calResult := doRequest(client, cfg, Request{
 		Method:      "GET",
-		URL:         cfg.URL + "/bypass403_calib_f0f0f0f0f0",
+		URL:         calibURL,
 		Headers:     map[string]string{},
 		Description: "calibration",
 		Module:      "calibration",
@@ -198,14 +261,25 @@ func Run(cfg *Config, requests []Request) []Result {
 	jobCh := make(chan Request, len(requests))
 	resultCh := make(chan Result, len(requests))
 
+	// rateCh is a shared token channel. When DelayMS > 0 a single ticker goroutine
+	// emits one token every DelayMS ms so combined throughput across all workers
+	// is ~1 request per DelayMS, regardless of thread count. When DelayMS == 0
+	// rateCh is nil and workers never block on it.
+	var rateCh <-chan time.Time
+	if cfg.DelayMS > 0 {
+		ticker := time.NewTicker(time.Duration(cfg.DelayMS) * time.Millisecond)
+		defer ticker.Stop()
+		rateCh = ticker.C
+	}
+
 	var wg sync.WaitGroup
 	for i := 0; i < cfg.Threads; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for req := range jobCh {
-				if cfg.DelayMS > 0 {
-					time.Sleep(time.Duration(cfg.DelayMS) * time.Millisecond)
+				if rateCh != nil {
+					<-rateCh
 				}
 				resultCh <- doRequest(client, cfg, req)
 			}

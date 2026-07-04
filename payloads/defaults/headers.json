@@ -37,6 +37,9 @@
     { "name": "Content-Type", "value": "application/json", "desc": "content-type-aware ACLs on GET" },
     { "name": "Transfer-Encoding", "value": "chunked", "desc": "TE-aware ACL/proxy confusion on GET with empty body" },
     { "name": "X-Forwarded-Scheme", "value": "internal", "desc": "internal-scheme spoofing" },
+    { "name": "X-Forwarded-Proto", "value": "https", "desc": "proto spoofing: force HTTPS — some apps gate internal paths on scheme" },
+    { "name": "X-Forwarded-Proto", "value": "http",  "desc": "proto spoofing: force HTTP — mixed-mode apps may have looser auth on HTTP" },
+    { "name": "X-Forwarded-SSL",   "value": "on",    "desc": "SSL flag spoofing: used by some load balancers in place of X-Forwarded-Proto" },
     { "name": "X-ATT-DeviceId", "value": "internal", "desc": "misc internal marker header" },
     { "name": "X-Wap-Profile", "value": "internal", "desc": "misc internal marker header" }
   ],

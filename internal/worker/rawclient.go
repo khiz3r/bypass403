@@ -116,6 +116,11 @@ func doRawRequestOnce(cfg *Config, req Request) Result {
 		rawHeaders[k] = strings.Join(v, ", ")
 	}
 
+	snippet := strings.ToLower(string(body))
+	if len(snippet) > 512 {
+		snippet = snippet[:512]
+	}
+
 	if cfg.Debug {
 		fmt.Printf("<< [RAW] HTTP %d | len=%d | hash=%s\n", resp.StatusCode, len(body), hash[:8])
 	}
@@ -127,5 +132,6 @@ func doRawRequestOnce(cfg *Config, req Request) Result {
 		BodyHash:    hash,
 		ContentType: resp.Header.Get("Content-Type"),
 		RawHeaders:  rawHeaders,
+		BodySnippet: snippet,
 	}
 }
